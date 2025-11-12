@@ -150,6 +150,7 @@ impl InfAmm {
                 |s| match res.inner.try_get_or_init_lst_svc(&s.into_lst_state()) {
                     Ok(_) => Ok(()),
                     Err(error) => {
+                        // Do not cause an error when we don't have the necessary spl data for a LST
                         if matches!(error, InfErr::MissingSplData { .. }) {
                             Ok(())
                         } else {
