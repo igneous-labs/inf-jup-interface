@@ -86,13 +86,6 @@ pub const INF_LST_LIST_ID: Pubkey = Pubkey::new_from_array(LST_STATE_LIST_ID);
 // - we only check for underlying stake pool not being updated for the epoch
 //   during the quoting procedure to determine whether to return err
 
-#[derive(Debug, Clone)]
-pub struct InfAmm {
-    pub inner: InfStd,
-    pub current_epoch: Arc<AtomicU64>,
-}
-single_program_amm!(InfAmm, INF_PROGRAM_ID, LABEL);
-
 fn build_spl_lsts() -> HashMap<[u8; 32], [u8; 32]> {
     load_sanctum_lst_list()
         .into_iter()
@@ -111,12 +104,19 @@ fn build_spl_lsts() -> HashMap<[u8; 32], [u8; 32]> {
         .collect()
 }
 
-impl Amm for InfAmm {
-    /// The `keyed_account` should be the `LST_STATE_LIST`, **NOT** `POOL_STATE`.
-    fn from_keyed_account(keyed_account: &KeyedAccount, amm_context: &AmmContext) -> Result<Self>
-    where
-        Self: Sized,
-    {
+#[derive(Debug, Clone)]
+pub struct InfAmm {
+    pub inner: InfStd,
+    pub current_epoch: Arc<AtomicU64>,
+}
+single_program_amm!(InfAmm, INF_PROGRAM_ID, LABEL);
+
+impl InfAmm {
+    pub fn new(
+        keyed_account: &KeyedAccount,
+        amm_context: &AmmContext,
+        spl_lsts: HashMap<[u8; 32], [u8; 32]>,
+    ) -> Result<Self> {
         if *keyed_account.key.as_array() != LST_STATE_LIST_ID {
             return Err(anyhow!("Incorrect LST state list keyed_account"));
         }
@@ -129,7 +129,7 @@ impl Amm for InfAmm {
                 None,
                 Default::default(),
                 Default::default(),
-                build_spl_lsts(),
+                spl_lsts,
                 find_pda,
                 create_raw_pda,
             )
@@ -161,6 +161,16 @@ impl Amm for InfAmm {
             .map_err(FmtErr)?;
 
         Ok(res)
+    }
+}
+
+impl Amm for InfAmm {
+    /// The `keyed_account` should be the `LST_STATE_LIST`, **NOT** `POOL_STATE`.
+    fn from_keyed_account(keyed_account: &KeyedAccount, amm_context: &AmmContext) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Self::new(keyed_account, amm_context, build_spl_lsts())
     }
 
     fn label(&self) -> String {
