@@ -15,15 +15,15 @@ version = "0.1.0"
 # In general, keep default-features = false in workspace
 # and enable individual features in indiv crates
 anyhow = { version = "^1", default-features = false }
-backoff = "0.4"
+backoff = { version = "^0.4", default-features = false }
 generic-array-struct = { version = "^0.3.1", default-features = false }
 glob = { version = "^0.3", default-features = false }
 jupiter-amm-interface = { version = "^0.6", default-features = false }
 lazy_static = { version = "^1", default-features = false }
 rust_decimal = { version = "^1.36.0", default-features = false } # vers constraint based on jupiter-amm-interface
-sanctum-lst-list = { git = "https://github.com/jup-ag/sanctum-lst-list.git", rev = "dbf31ad5e91e4b0f7402c05bc56c779b4049c8c7" }
 serde = { version = "^1", default-features = false }
 serde_json = { version = "^1", default-features = false }
+ureq = { version = "^3", default-features = false }
 
 # solana crates
 mollusk-svm = { version = "^0.5", default-features = false }
@@ -35,6 +35,9 @@ solana-instruction = { version = "^2.3.0", default-features = false }
 solana-logger = { version = "^2", default-features = false }
 solana-pubkey = { version = "^2.2.1", default-features = false }
 solana-sha256-hasher = { version = "^2.2.1", default-features = false }
+
+# sanctum-lst-list
+sanctum-lst-list = { git = "https://github.com/jup-ag/sanctum-lst-list.git", rev = "dbf31ad5e91e4b0f7402c05bc56c779b4049c8c7" }
 
 # inf-1.5 crates
 inf1-std = { git = "https://github.com/igneous-labs/inf-1.5.git", branch = "master" }

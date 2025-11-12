@@ -20,7 +20,7 @@ use mollusk_svm::{
 use solana_account::Account;
 use solana_instruction::Instruction;
 use solana_pubkey::Pubkey;
-use test_utils::{mollusk_exec, mollusk_inf_fixture_ctl};
+use test_utils::{mollusk_exec, mollusk_inf_fixture_ctl, SPL_LSTS};
 
 use crate::common::AMM_CONTEXT;
 
@@ -62,13 +62,14 @@ pub fn swap_test(
     let (key, account) = onchain_state
         .get_key_value(&LST_STATE_LIST_ID.into())
         .unwrap();
-    let mut inf = InfAmm::from_keyed_account(
+    let mut inf = InfAmm::new(
         &KeyedAccount {
             key: *key,
             account: account.clone(),
             params: None,
         },
         &AMM_CONTEXT,
+        SPL_LSTS.into_iter().collect(),
     )
     .unwrap();
 
@@ -166,7 +167,7 @@ fn saam_to_inf_ix(
     amount: u64,
     SwapAndAccountMetas {
         swap,
-        account_metas,
+        mut account_metas,
     }: SwapAndAccountMetas,
     swap_mode: SwapMode,
 ) -> Instruction {
@@ -217,6 +218,14 @@ fn saam_to_inf_ix(
         .to_vec(),
         _ => unreachable!(),
     };
+    // Refer to `get_swap_and_account_metas` to view changes
+    // that we made to the vanilla instruction that we need to undo here:
+    // - account inserted at front
+    // - all is_signer set to false. All 4 swap instructions have
+    //   signer as the first account
+    account_metas.remove(0);
+    account_metas[0].is_signer = true;
+
     Instruction {
         program_id: inf1_std::inf1_ctl_core::ID.into(),
         accounts: account_metas,

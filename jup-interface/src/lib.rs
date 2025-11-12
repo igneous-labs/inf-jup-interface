@@ -30,12 +30,8 @@ use inf1_std::{
         SvcAg,
     },
     instructions::swap::{
-        exact_in::{
-            swap_exact_in_ix_is_signer, swap_exact_in_ix_is_writer, swap_exact_in_ix_keys_owned,
-        },
-        exact_out::{
-            swap_exact_out_ix_is_signer, swap_exact_out_ix_is_writer, swap_exact_out_ix_keys_owned,
-        },
+        exact_in::{swap_exact_in_ix_is_writer, swap_exact_in_ix_keys_owned},
+        exact_out::{swap_exact_out_ix_is_writer, swap_exact_out_ix_keys_owned},
     },
     quote::swap::err::SwapQuoteErr,
     trade::{instruction::TradeIxArgs, Trade, TradeLimitTy},
@@ -61,11 +57,8 @@ use crate::{
 
 #[allow(deprecated)]
 use inf1_std::instructions::liquidity::{
-    add::{add_liquidity_ix_is_signer, add_liquidity_ix_is_writer, add_liquidity_ix_keys_owned},
-    remove::{
-        remove_liquidity_ix_is_signer, remove_liquidity_ix_is_writer,
-        remove_liquidity_ix_keys_owned,
-    },
+    add::{add_liquidity_ix_is_writer, add_liquidity_ix_keys_owned},
+    remove::{remove_liquidity_ix_is_writer, remove_liquidity_ix_keys_owned},
 };
 
 pub mod clock;
@@ -90,13 +83,6 @@ pub const INF_LST_LIST_ID: Pubkey = Pubkey::new_from_array(LST_STATE_LIST_ID);
 // - we only check for underlying stake pool not being updated for the epoch
 //   during the quoting procedure to determine whether to return err
 
-#[derive(Debug, Clone)]
-pub struct InfAmm {
-    pub inner: InfStd,
-    pub current_epoch: Arc<AtomicU64>,
-}
-single_program_amm!(InfAmm, INF_PROGRAM_ID, LABEL);
-
 fn build_spl_lsts() -> HashMap<[u8; 32], [u8; 32]> {
     load_sanctum_lst_list()
         .into_iter()
@@ -115,12 +101,19 @@ fn build_spl_lsts() -> HashMap<[u8; 32], [u8; 32]> {
         .collect()
 }
 
-impl Amm for InfAmm {
-    /// The `keyed_account` should be the `LST_STATE_LIST`, **NOT** `POOL_STATE`.
-    fn from_keyed_account(keyed_account: &KeyedAccount, amm_context: &AmmContext) -> Result<Self>
-    where
-        Self: Sized,
-    {
+#[derive(Debug, Clone)]
+pub struct InfAmm {
+    pub inner: InfStd,
+    pub current_epoch: Arc<AtomicU64>,
+}
+single_program_amm!(InfAmm, INF_PROGRAM_ID, LABEL);
+
+impl InfAmm {
+    pub fn new(
+        keyed_account: &KeyedAccount,
+        amm_context: &AmmContext,
+        spl_lsts: HashMap<[u8; 32], [u8; 32]>,
+    ) -> Result<Self> {
         if *keyed_account.key.as_array() != LST_STATE_LIST_ID {
             return Err(anyhow!("Incorrect LST state list keyed_account"));
         }
@@ -133,7 +126,7 @@ impl Amm for InfAmm {
                 None,
                 Default::default(),
                 Default::default(),
-                build_spl_lsts(),
+                spl_lsts,
                 find_pda,
                 create_raw_pda,
             )
@@ -153,6 +146,7 @@ impl Amm for InfAmm {
                 |s| match res.inner.try_get_or_init_lst_svc(&s.into_lst_state()) {
                     Ok(_) => Ok(()),
                     Err(error) => {
+                        // Do not cause an error when we don't have the necessary spl data for a LST
                         if matches!(error, InfErr::MissingSplData { .. }) {
                             Ok(())
                         } else {
@@ -164,6 +158,16 @@ impl Amm for InfAmm {
             .map_err(FmtErr)?;
 
         Ok(res)
+    }
+}
+
+impl Amm for InfAmm {
+    /// The `keyed_account` should be the `LST_STATE_LIST`, **NOT** `POOL_STATE`.
+    fn from_keyed_account(keyed_account: &KeyedAccount, amm_context: &AmmContext) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Self::new(keyed_account, amm_context, build_spl_lsts())
     }
 
     fn label(&self) -> String {
@@ -417,9 +421,8 @@ impl Amm for InfAmm {
             Trade::AddLiquidity(ix) => {
                 let a = ix.to_full();
                 #[allow(deprecated)]
-                account_metas.extend(keys_signer_writable_to_metas(
+                account_metas.extend(keys_writable_to_jup_metas(
                     add_liquidity_ix_keys_owned(&ix.accs).seq(),
-                    add_liquidity_ix_is_signer(&ix.accs).seq(),
                     add_liquidity_ix_is_writer(&ix.accs).seq(),
                 ));
                 SwapAndAccountMetas {
@@ -427,16 +430,14 @@ impl Amm for InfAmm {
                         lst_value_calc_accs: a.lst_value_calc_accs,
                         lst_index: a.lst_index,
                     },
-
                     account_metas,
                 }
             }
             Trade::RemoveLiquidity(ix) => {
                 let a = ix.to_full();
                 #[allow(deprecated)]
-                account_metas.extend(keys_signer_writable_to_metas(
+                account_metas.extend(keys_writable_to_jup_metas(
                     remove_liquidity_ix_keys_owned(&ix.accs).seq(),
-                    remove_liquidity_ix_is_signer(&ix.accs).seq(),
                     remove_liquidity_ix_is_writer(&ix.accs).seq(),
                 ));
                 SwapAndAccountMetas {
@@ -444,16 +445,14 @@ impl Amm for InfAmm {
                         lst_value_calc_accs: a.lst_value_calc_accs,
                         lst_index: a.lst_index,
                     },
-
                     account_metas,
                 }
             }
             Trade::SwapExactIn(ix) => {
                 let a = ix.to_full();
                 #[allow(deprecated)]
-                account_metas.extend(keys_signer_writable_to_metas(
+                account_metas.extend(keys_writable_to_jup_metas(
                     swap_exact_in_ix_keys_owned(&ix.accs).seq(),
-                    swap_exact_in_ix_is_signer(&ix.accs).seq(),
                     swap_exact_in_ix_is_writer(&ix.accs).seq(),
                 ));
                 SwapAndAccountMetas {
@@ -469,9 +468,8 @@ impl Amm for InfAmm {
             Trade::SwapExactOut(ix) => {
                 let a = ix.to_full();
                 #[allow(deprecated)]
-                account_metas.extend(keys_signer_writable_to_metas(
+                account_metas.extend(keys_writable_to_jup_metas(
                     swap_exact_out_ix_keys_owned(&ix.accs).seq(),
-                    swap_exact_out_ix_is_signer(&ix.accs).seq(),
                     swap_exact_out_ix_is_writer(&ix.accs).seq(),
                 ));
                 SwapAndAccountMetas {
@@ -496,6 +494,7 @@ impl Amm for InfAmm {
     }
 
     fn supports_exact_out(&self) -> bool {
+        // Because AddLiquidity and RemoveLiquidity does not support
         false
     }
 
@@ -584,14 +583,12 @@ pub fn to_jup_quote(
     })
 }
 
-pub fn keys_signer_writable_to_metas<'a>(
+pub fn keys_writable_to_jup_metas<'a>(
     keys: impl Iterator<Item = &'a [u8; 32]>,
-    signer: impl Iterator<Item = &'a bool>,
     writable: impl Iterator<Item = &'a bool>,
 ) -> Vec<AccountMeta> {
-    keys.zip(signer)
-        .zip(writable)
-        .map(|((key, _signer), writable)| AccountMeta {
+    keys.zip(writable)
+        .map(|(key, writable)| AccountMeta {
             pubkey: Pubkey::new_from_array(*key),
             is_signer: false, // The signer is elevated by the jupiter instruction, otherwise uses shared accounts and elevated internally before CPI
             is_writable: *writable,
