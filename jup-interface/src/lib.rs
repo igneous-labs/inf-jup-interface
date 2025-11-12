@@ -1,6 +1,3 @@
-#![allow(unexpected_cfgs)]
-#![cfg(not(target_os = "solana"))]
-
 use std::{
     collections::HashMap,
     iter::once,
@@ -140,7 +137,6 @@ impl InfAmm {
         // need to initialize sol val calc data for all LSTs on the list
         // so that first update doesnt fail with InfErr::MissingSvcData
 
-        // unwrap-safety: successful InfStd::new above means data is valid
         let lst_state_list = LstStatePackedList::of_acc_data(&keyed_account.account.data)
             .context("LstStatePackedList::of_acc_data failed")?;
         lst_state_list
@@ -184,7 +180,7 @@ impl Amm for InfAmm {
 
     /// S Pools are 1 per program, so just use program ID as key
     fn key(&self) -> Pubkey {
-        self.program_id()
+        INF_LST_LIST_ID
     }
 
     fn get_reserve_mints(&self) -> Vec<Pubkey> {
@@ -280,6 +276,7 @@ impl Amm for InfAmm {
                             }
                         }
                     };
+
                 match &mut calc.0 {
                     // omit clock for these variants
                     SvcAg::Lido(c) => c
