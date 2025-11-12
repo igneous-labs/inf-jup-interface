@@ -1,11 +1,6 @@
 use inf1_std::{inf1_ctl_core::accounts::pool_state::PoolState, inf1_pp_ag_std::PricingAgTy};
 use solana_pubkey::Pubkey;
 
-mod spl_lsts;
-
-// Re-exports
-pub use spl_lsts::*;
-
 pub const LABEL: &str = "Sanctum Infinity";
 
 pub const INF_MINT_ADDR: [u8; 32] =
