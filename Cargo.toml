@@ -15,11 +15,13 @@ version = "0.1.0"
 # In general, keep default-features = false in workspace
 # and enable individual features in indiv crates
 anyhow = { version = "^1", default-features = false }
+backoff = "0.4"
 generic-array-struct = { version = "^0.3.1", default-features = false }
 glob = { version = "^0.3", default-features = false }
 jupiter-amm-interface = { version = "^0.6", default-features = false }
 lazy_static = { version = "^1", default-features = false }
 rust_decimal = { version = "^1.36.0", default-features = false } # vers constraint based on jupiter-amm-interface
+sanctum-lst-list = { git = "https://github.com/jup-ag/sanctum-lst-list.git", rev = "dbf31ad5e91e4b0f7402c05bc56c779b4049c8c7" }
 serde = { version = "^1", default-features = false }
 serde_json = { version = "^1", default-features = false }
 
