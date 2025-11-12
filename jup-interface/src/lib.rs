@@ -175,7 +175,7 @@ impl Amm for InfAmm {
     }
 
     fn program_id(&self) -> Pubkey {
-        INF_LST_LIST_ID
+        inf1_std::inf1_ctl_core::ID.into()
     }
 
     /// S Pools are 1 per program, so just use program ID as key
