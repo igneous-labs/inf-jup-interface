@@ -2,6 +2,7 @@
 #![cfg(not(target_os = "solana"))]
 
 use std::{
+    collections::HashMap,
     iter::once,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -9,7 +10,8 @@ use std::{
     },
 };
 
-use anyhow::{anyhow, Result};
+use ::sanctum_lst_list::{PoolInfo, SanctumLst};
+use anyhow::{anyhow, Context, Result};
 use inf1_std::{
     err::InfErr,
     inf1_ctl_core::{
@@ -31,12 +33,8 @@ use inf1_std::{
         SvcAg,
     },
     instructions::swap::{
-        exact_in::{
-            swap_exact_in_ix_is_signer, swap_exact_in_ix_is_writer, swap_exact_in_ix_keys_owned,
-        },
-        exact_out::{
-            swap_exact_out_ix_is_signer, swap_exact_out_ix_is_writer, swap_exact_out_ix_keys_owned,
-        },
+        exact_in::{swap_exact_in_ix_is_writer, swap_exact_in_ix_keys_owned},
+        exact_out::{swap_exact_out_ix_is_writer, swap_exact_out_ix_keys_owned},
     },
     quote::swap::err::SwapQuoteErr,
     trade::{instruction::TradeIxArgs, Trade, TradeLimitTy},
@@ -44,8 +42,8 @@ use inf1_std::{
     InfStd,
 };
 use jupiter_amm_interface::{
-    AccountMap, Amm, AmmContext, KeyedAccount, Quote, QuoteParams, Swap, SwapAndAccountMetas,
-    SwapMode, SwapParams,
+    single_program_amm, AccountMap, Amm, AmmContext, KeyedAccount, Quote, QuoteParams,
+    SingleProgramAmm, Swap, SwapAndAccountMetas, SwapMode, SwapParams,
 };
 use rust_decimal::Decimal;
 use solana_instruction::AccountMeta;
@@ -53,19 +51,17 @@ use solana_pubkey::Pubkey;
 
 use crate::{
     clock::is_epoch_affected_lst_mint,
-    consts::{DEFAULT_MAINNET_POOL, LABEL, SPL_LSTS},
+    consts::{DEFAULT_MAINNET_POOL, LABEL},
     err::FmtErr,
     pda::{create_raw_pda, find_pda},
+    sanctum_lst_list::load_sanctum_lst_list,
     update::AccountMapRef,
 };
 
 #[allow(deprecated)]
 use inf1_std::instructions::liquidity::{
-    add::{add_liquidity_ix_is_signer, add_liquidity_ix_is_writer, add_liquidity_ix_keys_owned},
-    remove::{
-        remove_liquidity_ix_is_signer, remove_liquidity_ix_is_writer,
-        remove_liquidity_ix_keys_owned,
-    },
+    add::{add_liquidity_ix_is_writer, add_liquidity_ix_keys_owned},
+    remove::{remove_liquidity_ix_is_writer, remove_liquidity_ix_keys_owned},
 };
 
 pub mod clock;
@@ -74,6 +70,10 @@ pub mod err;
 pub mod update;
 
 mod pda;
+mod sanctum_lst_list;
+
+pub const INF_PROGRAM_ID: Pubkey = Pubkey::new_from_array(inf1_std::inf1_ctl_core::ID);
+pub const INF_LST_LIST_ID: Pubkey = Pubkey::new_from_array(LST_STATE_LIST_ID);
 
 // Note on Clock hax:
 // Because `Clock` is a special-case account, and because it's only used
@@ -87,12 +87,31 @@ mod pda;
 //   during the quoting procedure to determine whether to return err
 
 #[derive(Debug, Clone)]
-pub struct Inf {
+pub struct InfAmm {
     pub inner: InfStd,
     pub current_epoch: Arc<AtomicU64>,
 }
+single_program_amm!(InfAmm, INF_PROGRAM_ID, LABEL);
 
-impl Amm for Inf {
+fn build_spl_lsts() -> HashMap<[u8; 32], [u8; 32]> {
+    load_sanctum_lst_list()
+        .into_iter()
+        .filter_map(|SanctumLst { mint, pool, .. }| {
+            let stake_pool_address = match pool {
+                PoolInfo::Lido => return None,
+                PoolInfo::Marinade => return None,
+                PoolInfo::ReservePool => return None,
+                PoolInfo::SanctumSpl(spl_pool_accounts) => spl_pool_accounts.pool.to_bytes(),
+                PoolInfo::Spl(spl_pool_accounts) => spl_pool_accounts.pool.to_bytes(),
+                PoolInfo::SPool(_) => return None,
+                PoolInfo::SanctumSplMulti(spl_pool_accounts) => spl_pool_accounts.pool.to_bytes(),
+            };
+            Some((mint.to_bytes(), stake_pool_address))
+        })
+        .collect()
+}
+
+impl Amm for InfAmm {
     /// The `keyed_account` should be the `LST_STATE_LIST`, **NOT** `POOL_STATE`.
     fn from_keyed_account(keyed_account: &KeyedAccount, amm_context: &AmmContext) -> Result<Self>
     where
@@ -101,6 +120,7 @@ impl Amm for Inf {
         if *keyed_account.key.as_array() != LST_STATE_LIST_ID {
             return Err(anyhow!("Incorrect LST state list keyed_account"));
         }
+
         let mut res = Self {
             inner: InfStd::new(
                 DEFAULT_MAINNET_POOL,
@@ -109,7 +129,7 @@ impl Amm for Inf {
                 None,
                 Default::default(),
                 Default::default(),
-                SPL_LSTS.into_iter().collect(),
+                build_spl_lsts(),
                 find_pda,
                 create_raw_pda,
             )
@@ -121,15 +141,23 @@ impl Amm for Inf {
         // so that first update doesnt fail with InfErr::MissingSvcData
 
         // unwrap-safety: successful InfStd::new above means data is valid
-        let lst_state_list = LstStatePackedList::of_acc_data(&keyed_account.account.data).unwrap();
+        let lst_state_list = LstStatePackedList::of_acc_data(&keyed_account.account.data)
+            .context("LstStatePackedList::of_acc_data failed")?;
         lst_state_list
             .0
             .iter()
-            .try_for_each(|s| {
-                res.inner
-                    .try_get_or_init_lst_svc(&s.into_lst_state())
-                    .map(|_| ())
-            })
+            .try_for_each(
+                |s| match res.inner.try_get_or_init_lst_svc(&s.into_lst_state()) {
+                    Ok(_) => Ok(()),
+                    Err(error) => {
+                        if matches!(error, InfErr::MissingSplData { .. }) {
+                            Ok(())
+                        } else {
+                            Err(error)
+                        }
+                    }
+                },
+            )
             .map_err(FmtErr)?;
 
         Ok(res)
@@ -140,7 +168,7 @@ impl Amm for Inf {
     }
 
     fn program_id(&self) -> Pubkey {
-        inf1_std::inf1_ctl_core::ID.into()
+        INF_LST_LIST_ID
     }
 
     /// S Pools are 1 per program, so just use program ID as key
@@ -228,8 +256,19 @@ impl Amm for Inf {
             .try_for_each(|lst_state| {
                 InfStd::update_lst_reserves(lst_reserves, create_pda as &_, &lst_state, fetched)?;
 
-                let calc = InfStd::try_get_or_init_lst_svc_static(lst_calcs, spl_lsts, &lst_state)
-                    .map_err(UpdateErr::Inner)?;
+                let calc =
+                    match InfStd::try_get_or_init_lst_svc_static(lst_calcs, spl_lsts, &lst_state) {
+                        Ok(calc) => calc,
+                        Err(error) => {
+                            // Do not cause an error when we don't have the necessary spl data for a LST
+                            if matches!(error, InfErr::MissingSplData { .. }) {
+                                lst_calcs.remove(&lst_state.mint);
+                                return Ok(());
+                            } else {
+                                return Err(UpdateErr::Inner(error));
+                            }
+                        }
+                    };
                 match &mut calc.0 {
                     // omit clock for these variants
                     SvcAg::Lido(c) => c
@@ -267,6 +306,7 @@ impl Amm for Inf {
             input_mint,
             output_mint,
             swap_mode,
+            ..
         }: &QuoteParams,
     ) -> Result<Quote> {
         // clock special-case handling:
@@ -368,39 +408,45 @@ impl Amm for Inf {
             },
         };
         let ix = self.inner.trade_ix(&args, limit_ty).map_err(FmtErr)?;
+        let mut account_metas = vec![AccountMeta::new_readonly(Self::PROGRAM_ID, false)];
         Ok(match ix {
             Trade::AddLiquidity(ix) => {
                 let a = ix.to_full();
+                #[allow(deprecated)]
+                account_metas.extend(keys_writable_to_jup_metas(
+                    add_liquidity_ix_keys_owned(&ix.accs).seq(),
+                    add_liquidity_ix_is_writer(&ix.accs).seq(),
+                ));
                 SwapAndAccountMetas {
                     swap: Swap::SanctumSAddLiquidity {
                         lst_value_calc_accs: a.lst_value_calc_accs,
                         lst_index: a.lst_index,
                     },
-                    #[allow(deprecated)]
-                    account_metas: keys_signer_writable_to_metas(
-                        add_liquidity_ix_keys_owned(&ix.accs).seq(),
-                        add_liquidity_ix_is_signer(&ix.accs).seq(),
-                        add_liquidity_ix_is_writer(&ix.accs).seq(),
-                    ),
+                    account_metas,
                 }
             }
             Trade::RemoveLiquidity(ix) => {
                 let a = ix.to_full();
+                #[allow(deprecated)]
+                account_metas.extend(keys_writable_to_jup_metas(
+                    remove_liquidity_ix_keys_owned(&ix.accs).seq(),
+                    remove_liquidity_ix_is_writer(&ix.accs).seq(),
+                ));
                 SwapAndAccountMetas {
                     swap: Swap::SanctumSRemoveLiquidity {
                         lst_value_calc_accs: a.lst_value_calc_accs,
                         lst_index: a.lst_index,
                     },
-                    #[allow(deprecated)]
-                    account_metas: keys_signer_writable_to_metas(
-                        remove_liquidity_ix_keys_owned(&ix.accs).seq(),
-                        remove_liquidity_ix_is_signer(&ix.accs).seq(),
-                        remove_liquidity_ix_is_writer(&ix.accs).seq(),
-                    ),
+                    account_metas,
                 }
             }
             Trade::SwapExactIn(ix) => {
                 let a = ix.to_full();
+                #[allow(deprecated)]
+                account_metas.extend(keys_writable_to_jup_metas(
+                    swap_exact_in_ix_keys_owned(&ix.accs).seq(),
+                    swap_exact_in_ix_is_writer(&ix.accs).seq(),
+                ));
                 SwapAndAccountMetas {
                     swap: Swap::SanctumS {
                         src_lst_value_calc_accs: a.inp_lst_value_calc_accs,
@@ -408,16 +454,16 @@ impl Amm for Inf {
                         src_lst_index: a.inp_lst_index,
                         dst_lst_index: a.out_lst_index,
                     },
-                    #[allow(deprecated)]
-                    account_metas: keys_signer_writable_to_metas(
-                        swap_exact_in_ix_keys_owned(&ix.accs).seq(),
-                        swap_exact_in_ix_is_signer(&ix.accs).seq(),
-                        swap_exact_in_ix_is_writer(&ix.accs).seq(),
-                    ),
+                    account_metas,
                 }
             }
             Trade::SwapExactOut(ix) => {
                 let a = ix.to_full();
+                #[allow(deprecated)]
+                account_metas.extend(keys_writable_to_jup_metas(
+                    swap_exact_out_ix_keys_owned(&ix.accs).seq(),
+                    swap_exact_out_ix_is_writer(&ix.accs).seq(),
+                ));
                 SwapAndAccountMetas {
                     swap: Swap::SanctumS {
                         src_lst_value_calc_accs: a.inp_lst_value_calc_accs,
@@ -425,12 +471,7 @@ impl Amm for Inf {
                         src_lst_index: a.inp_lst_index,
                         dst_lst_index: a.out_lst_index,
                     },
-                    #[allow(deprecated)]
-                    account_metas: keys_signer_writable_to_metas(
-                        swap_exact_out_ix_keys_owned(&ix.accs).seq(),
-                        swap_exact_out_ix_is_signer(&ix.accs).seq(),
-                        swap_exact_out_ix_is_writer(&ix.accs).seq(),
-                    ),
+                    account_metas,
                 }
             }
         })
@@ -444,65 +485,56 @@ impl Amm for Inf {
         true
     }
 
-    /// TODO: this is not true for AddLiquidity and RemoveLiquidity
     fn supports_exact_out(&self) -> bool {
-        true
+        // Because AddLiquidity and RemoveLiquidity does not support
+        false
     }
 
     fn program_dependencies(&self) -> Vec<(Pubkey, String)> {
-        vec![
-            // SPL
-            (
-                inf1_svc_spl_core::keys::spl::POOL_PROG_ID.into(),
-                "spl_stake_pool".to_owned(),
-            ),
-            (
-                inf1_svc_spl_core::keys::spl::ID.into(),
-                "spl_calculator".to_owned(),
-            ),
-            // Sanctum SPL
-            (
-                inf1_svc_spl_core::keys::sanctum_spl::POOL_PROG_ID.into(),
-                "sanctum_spl_stake_pool".to_owned(),
-            ),
-            (
-                inf1_svc_spl_core::keys::sanctum_spl::ID.into(),
-                "sanctum_spl_calculator".to_owned(),
-            ),
-            // Sanctum SPL Multi
-            (
-                inf1_svc_spl_core::keys::sanctum_spl_multi::POOL_PROG_ID.into(),
-                "sanctum_spl_multi_stake_pool".to_owned(),
-            ),
-            (
-                inf1_svc_spl_core::keys::sanctum_spl_multi::ID.into(),
-                "sanctum_spl_multi_calculator".to_owned(),
-            ),
-            // marinade
-            (
-                inf1_svc_marinade_core::keys::POOL_PROG_ID.into(),
-                "marinade".to_owned(),
-            ),
-            (
-                inf1_svc_marinade_core::ID.into(),
-                "marinade_calculator".to_owned(),
-            ),
-            // lido
-            (
-                inf1_svc_lido_core::keys::POOL_PROG_ID.into(),
-                "lido".to_owned(),
-            ),
-            (inf1_svc_lido_core::ID.into(), "lido_calculator".to_owned()),
-            // wSOL
-            (inf1_svc_wsol_core::ID.into(), "wsol_calculator".to_owned()),
-            // pricing program
-            (
-                inf1_pp_flatfee_core::ID.into(),
-                "flat_fee_pricing_program".to_owned(),
-            ),
-        ]
+        PROGRAM_DEPENDENCIES
+            .into_iter()
+            .map(|(program_id, label)| (program_id.into(), label.into()))
+            .collect()
+    }
+
+    fn get_accounts_len(&self) -> usize {
+        32
     }
 }
+
+pub const PROGRAM_DEPENDENCIES: [([u8; 32], &str); 12] = [
+    // SPL
+    (inf1_svc_spl_core::keys::spl::POOL_PROG_ID, "spl_stake_pool"),
+    (inf1_svc_spl_core::keys::spl::ID, "spl_calculator"),
+    // Sanctum SPL
+    (
+        inf1_svc_spl_core::keys::sanctum_spl::POOL_PROG_ID,
+        "sanctum_spl_stake_pool",
+    ),
+    (
+        inf1_svc_spl_core::keys::sanctum_spl::ID,
+        "sanctum_spl_calculator",
+    ),
+    // Sanctum SPL Multi
+    (
+        inf1_svc_spl_core::keys::sanctum_spl_multi::POOL_PROG_ID,
+        "sanctum_spl_multi_stake_pool",
+    ),
+    (
+        inf1_svc_spl_core::keys::sanctum_spl_multi::ID,
+        "sanctum_spl_multi_calculator",
+    ),
+    // marinade
+    (inf1_svc_marinade_core::keys::POOL_PROG_ID, "marinade"),
+    (inf1_svc_marinade_core::ID, "marinade_calculator"),
+    // lido
+    (inf1_svc_lido_core::keys::POOL_PROG_ID, "lido"),
+    (inf1_svc_lido_core::ID, "lido_calculator"),
+    // wSOL
+    (inf1_svc_wsol_core::ID, "wsol_calculator"),
+    // pricing program
+    (inf1_pp_flatfee_core::ID, "flat_fee_pricing_program"),
+];
 
 #[inline]
 pub const fn swap_mode_to_trade_limit_ty(sm: SwapMode) -> TradeLimitTy {
@@ -543,16 +575,14 @@ pub fn to_jup_quote(
     })
 }
 
-pub fn keys_signer_writable_to_metas<'a>(
+pub fn keys_writable_to_jup_metas<'a>(
     keys: impl Iterator<Item = &'a [u8; 32]>,
-    signer: impl Iterator<Item = &'a bool>,
     writable: impl Iterator<Item = &'a bool>,
 ) -> Vec<AccountMeta> {
-    keys.zip(signer)
-        .zip(writable)
-        .map(|((key, signer), writable)| AccountMeta {
+    keys.zip(writable)
+        .map(|(key, writable)| AccountMeta {
             pubkey: Pubkey::new_from_array(*key),
-            is_signer: *signer,
+            is_signer: false, // The signer is elevated by the jupiter instruction, otherwise uses shared accounts and elevated internally before CPI
             is_writable: *writable,
         })
         .collect()
