@@ -24,11 +24,11 @@ fn remove_liq(swap_mode: SwapMode) {
 }
 
 #[test]
-fn reserve_v2_remove_liq_inf_exact_in() {
+fn reserve_v2_remove_liq_inf_exact_in_fixture_basic() {
     remove_liq(SwapMode::ExactIn);
 }
 
 #[test]
-fn reserve_v2_remove_liq_inf_exact_out() {
+fn reserve_v2_remove_liq_inf_exact_out_fixture_basic() {
     remove_liq(SwapMode::ExactOut);
 }

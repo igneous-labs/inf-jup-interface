@@ -32,9 +32,7 @@ use solana_pubkey::Pubkey;
 
 use crate::{
     consts::{
-        initial_pool, INF_LST_LIST_ID, INF_POOL_STATE_ID, INF_PROGRAM_ID_PUBKEY, LABEL,
-        RESERVE_V2_LABEL, RESERVE_V2_LST_LIST_ID, RESERVE_V2_POOL_STATE_ID,
-        RESERVE_V2_PROGRAM_ID_PUBKEY,
+        initial_pool, INF_PROGRAM_ID_PUBKEY, LABEL, RESERVE_V2_LABEL, RESERVE_V2_PROGRAM_ID_PUBKEY,
     },
     err::FmtErr,
     pda::{create_raw_pda, find_pda},
@@ -76,9 +74,7 @@ fn build_spl_lsts() -> HashMap<[u8; 32], [u8; 32]> {
 #[derive(Clone)]
 pub struct InfAmm {
     pub inner: InfStd,
-    lst_state_list_id: Pubkey,
-    pool_state_id: Pubkey,
-    clock_ref: ClockRef,
+    pub clock_ref: ClockRef,
 }
 
 impl AmmProgramIdToLabel for InfAmm {
@@ -89,6 +85,20 @@ impl AmmProgramIdToLabel for InfAmm {
 }
 
 impl InfAmm {
+    fn pool_state_id(&self) -> [u8; 32] {
+        self.inner
+            .find_pool_state()
+            .expect("pool state PDA cached in InfAmm::new")
+            .0
+    }
+
+    fn lst_state_list_id(&self) -> [u8; 32] {
+        self.inner
+            .find_lst_state_list()
+            .expect("LST state list PDA cached in InfAmm::new")
+            .0
+    }
+
     pub fn new(
         keyed_account: &KeyedAccount,
         amm_context: &AmmContext,
@@ -97,31 +107,32 @@ impl InfAmm {
         let program_id = keyed_account.account.owner;
         let initial_pool = initial_pool(&program_id)
             .ok_or_else(|| anyhow!("Unsupported controller program: {program_id}"))?;
-        let (lst_state_list_id, pool_state_id) = if program_id == INF_PROGRAM_ID_PUBKEY {
-            (INF_LST_LIST_ID, INF_POOL_STATE_ID)
-        } else {
-            (RESERVE_V2_LST_LIST_ID, RESERVE_V2_POOL_STATE_ID)
-        };
-        if keyed_account.key != lst_state_list_id {
+        let mut inner = InfStd::new(
+            Some(program_id.to_bytes()),
+            initial_pool,
+            keyed_account.account.data.clone().into_boxed_slice(),
+            None,
+            None,
+            Default::default(),
+            Default::default(),
+            spl_lsts,
+            find_pda,
+            create_raw_pda,
+        )
+        .map_err(FmtErr)?;
+        let lst_state_list_id = inner
+            .find_cache_lst_state_list()
+            .ok_or(FmtErr(InfErr::NoValidPda))?
+            .0;
+        inner
+            .find_cache_pool_state()
+            .ok_or(FmtErr(InfErr::NoValidPda))?;
+        if keyed_account.key.to_bytes() != lst_state_list_id {
             return Err(anyhow!("Incorrect LST state list keyed_account"));
         }
 
         let mut res = Self {
-            inner: InfStd::new(
-                Some(program_id.to_bytes()),
-                initial_pool,
-                keyed_account.account.data.clone().into_boxed_slice(),
-                None,
-                None,
-                Default::default(),
-                Default::default(),
-                spl_lsts,
-                find_pda,
-                create_raw_pda,
-            )
-            .map_err(FmtErr)?,
-            lst_state_list_id,
-            pool_state_id,
+            inner,
             clock_ref: amm_context.clock_ref.clone(),
         };
 
@@ -162,12 +173,11 @@ impl Amm for InfAmm {
     }
 
     fn label(&self) -> String {
-        if self.program_id() == RESERVE_V2_PROGRAM_ID_PUBKEY {
-            RESERVE_V2_LABEL
-        } else {
-            LABEL
-        }
-        .to_owned()
+        Self::PROGRAM_ID_TO_LABELS
+            .iter()
+            .find(|(program_id, _)| *program_id == self.program_id())
+            .map(|(_, label)| (*label).to_owned())
+            .expect("program ID missing from InfAmm::PROGRAM_ID_TO_LABELS")
     }
 
     fn program_id(&self) -> Pubkey {
@@ -176,7 +186,7 @@ impl Amm for InfAmm {
 
     /// Each controller program has one pool, identified by its LST state list account ID
     fn key(&self) -> Pubkey {
-        self.lst_state_list_id
+        Pubkey::new_from_array(self.lst_state_list_id())
     }
 
     fn get_reserve_mints(&self) -> Vec<Pubkey> {
@@ -197,8 +207,8 @@ impl Amm for InfAmm {
             .iter()
             .map(|l| l.into_lst_state());
         [
-            self.pool_state_id.to_bytes(),
-            self.lst_state_list_id.to_bytes(),
+            self.pool_state_id(),
+            self.lst_state_list_id(),
             *self.inner.pool.lp_token_mint(),
         ]
         .into_iter()
@@ -225,6 +235,8 @@ impl Amm for InfAmm {
     }
 
     fn update(&mut self, account_map: &AccountMap) -> Result<()> {
+        let pool_state_id = self.pool_state_id();
+        let lst_state_list_id = self.lst_state_list_id();
         let clock = sim_clock(&self.clock_ref);
         let fetched = AccountMapRef {
             account_map,
@@ -234,7 +246,6 @@ impl Amm for InfAmm {
         self.inner.update_lst_state_list(fetched).map_err(FmtErr)?;
         self.inner.update_lp_token_supply(fetched).map_err(FmtErr)?;
 
-        let pool_state_id = self.pool_state_id.to_bytes();
         let InfStd {
             lst_state_list_data,
             pricing,
@@ -247,7 +258,7 @@ impl Amm for InfAmm {
 
         let mut all_lst_states = LstStatePackedList::of_acc_data(lst_state_list_data)
             .ok_or(FmtErr(InfErr::AccDeser {
-                pk: self.lst_state_list_id.to_bytes(),
+                pk: lst_state_list_id,
             }))?
             .0
             .iter()

@@ -47,7 +47,7 @@ fn add_liq_wsol_fixture_basic() {
 }
 
 #[test]
-fn reserve_v2_add_liq_wsol_exact_in() {
+fn reserve_v2_add_liq_wsol_exact_in_fixture_basic() {
     add_liq(
         RESERVE_V2_LST_LIST_ID,
         1_000,
@@ -58,7 +58,7 @@ fn reserve_v2_add_liq_wsol_exact_in() {
 }
 
 #[test]
-fn reserve_v2_add_liq_wsol_exact_out() {
+fn reserve_v2_add_liq_wsol_exact_out_fixture_basic() {
     add_liq(
         RESERVE_V2_LST_LIST_ID,
         1_000,

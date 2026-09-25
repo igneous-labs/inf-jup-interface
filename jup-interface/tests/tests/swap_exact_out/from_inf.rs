@@ -5,7 +5,7 @@ use test_utils::{KeyedUiAccount, ALL_FIXTURES};
 use crate::common::{swap_test, SwapUserAccs};
 
 #[test]
-fn reserve_v2_swap_exact_out_inf_to_wsol() {
+fn reserve_v2_swap_exact_out_inf_to_wsol_fixture_basic() {
     swap_test(
         RESERVE_V2_LST_LIST_ID,
         QuoteParams {

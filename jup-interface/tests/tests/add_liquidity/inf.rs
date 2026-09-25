@@ -24,11 +24,11 @@ fn add_liq(swap_mode: SwapMode) {
 }
 
 #[test]
-fn reserve_v2_add_liq_inf_exact_in() {
+fn reserve_v2_add_liq_inf_exact_in_fixture_basic() {
     add_liq(SwapMode::ExactIn);
 }
 
 #[test]
-fn reserve_v2_add_liq_inf_exact_out() {
+fn reserve_v2_add_liq_inf_exact_out_fixture_basic() {
     add_liq(SwapMode::ExactOut);
 }

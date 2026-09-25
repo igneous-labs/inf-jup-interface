@@ -73,7 +73,7 @@ fn swap_exact_in_wsol_to_stsol_fixture_basic() {
 }
 
 #[test]
-fn reserve_v2_swap_exact_in_wsol_to_inf() {
+fn reserve_v2_swap_exact_in_wsol_to_inf_fixture_basic() {
     swap_test(
         RESERVE_V2_LST_LIST_ID,
         QuoteParams {
