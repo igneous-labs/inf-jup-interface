@@ -253,6 +253,7 @@ impl Amm for InfAmm {
             spl_lsts,
             lst_reserves,
             create_pda,
+            find_pda,
             ..
         } = &mut self.inner;
 
@@ -282,19 +283,20 @@ impl Amm for InfAmm {
                     fetched,
                 )?;
 
-                let calc =
-                    match InfStd::try_get_or_init_lst_svc_static(lst_calcs, spl_lsts, &lst_state) {
-                        Ok(calc) => calc,
-                        Err(error) => {
-                            // Do not cause an error when we don't have the necessary spl data for a LST
-                            if matches!(error, InfErr::MissingSplData { .. }) {
-                                lst_calcs.remove(&lst_state.mint);
-                                return Ok(());
-                            } else {
-                                return Err(UpdateErr::Inner(error));
-                            }
+                let calc = match InfStd::try_get_or_init_lst_svc_static(
+                    lst_calcs, spl_lsts, &lst_state, find_pda,
+                ) {
+                    Ok(calc) => calc,
+                    Err(error) => {
+                        // Do not cause an error when we don't have the necessary spl data for a LST
+                        if matches!(error, InfErr::MissingSplData { .. }) {
+                            lst_calcs.remove(&lst_state.mint);
+                            return Ok(());
+                        } else {
+                            return Err(UpdateErr::Inner(error));
                         }
-                    };
+                    }
+                };
 
                 calc.update_svc(fetched)
                     .map_err(|e| e.map_inner(InfErr::UpdateSvc))
