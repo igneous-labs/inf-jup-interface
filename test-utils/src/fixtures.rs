@@ -13,7 +13,7 @@ use solana_pubkey::Pubkey;
 
 use crate::{mock_clock, mock_prog_acc, mock_progdata_acc, CONST_PUBKEYS};
 
-pub const FIXTURE_PROGRAMS: [(&str, Pubkey); 9] = [
+pub const FIXTURE_PROGRAMS: [(&str, Pubkey); 10] = [
     ("inf", *CONST_PUBKEYS.inf_ctl_prog()),
     ("lido-calc", *CONST_PUBKEYS.lido_calc_prog()),
     ("marinade-calc", *CONST_PUBKEYS.marinade_calc_prog()),
@@ -21,6 +21,7 @@ pub const FIXTURE_PROGRAMS: [(&str, Pubkey); 9] = [
         "sanctum-spl-multi-calc",
         *CONST_PUBKEYS.sanctum_spl_multi_calc_prog(),
     ),
+    ("sols-calc", *CONST_PUBKEYS.sols_calc_prog()),
     ("wsol-calc", *CONST_PUBKEYS.wsol_calc_prog()),
     ("flatslab-pp", *CONST_PUBKEYS.flatslab_pp_prog()),
     ("reserve-v2", *CONST_PUBKEYS.reserve_v2_prog()),
@@ -46,6 +47,10 @@ lazy_static! {
                     (
                         *CONST_PUBKEYS.marinade_prog(),
                         *CONST_PUBKEYS.marinade_progdata(),
+                    ),
+                    (
+                        *CONST_PUBKEYS.sols_prog(),
+                        *CONST_PUBKEYS.sols_progdata(),
                     ),
                 ]
                 .into_iter()

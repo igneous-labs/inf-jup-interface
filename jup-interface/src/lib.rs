@@ -12,7 +12,7 @@ use inf1_std::{
     inf1_pp_core::pair::Pair,
     inf1_svc_ag_std::{
         inf1_svc_inf_std::SYSVAR_CLOCK, inf1_svc_lido_core, inf1_svc_marinade_core,
-        inf1_svc_spl_core, inf1_svc_wsol_core, update::UpdateSvc,
+        inf1_svc_sols_core, inf1_svc_spl_core, inf1_svc_wsol_core, update::UpdateSvc,
     },
     instructions::swap::v2::{
         exact_in::{swap_exact_in_v2_ix_is_writer, swap_exact_in_v2_ix_keys_owned},
@@ -432,7 +432,7 @@ impl Amm for InfAmm {
     }
 }
 
-pub const PROGRAM_DEPENDENCIES: [([u8; 32], &str); 16] = [
+pub const PROGRAM_DEPENDENCIES: [([u8; 32], &str); 18] = [
     // SPL
     (inf1_svc_spl_core::keys::spl::POOL_PROG_ID, "spl_stake_pool"),
     (inf1_svc_spl_core::keys::spl::ID, "spl_calculator"),
@@ -462,6 +462,12 @@ pub const PROGRAM_DEPENDENCIES: [([u8; 32], &str); 16] = [
     (inf1_svc_lido_core::ID, "lido_calculator"),
     // wSOL
     (inf1_svc_wsol_core::ID, "wsol_calculator"),
+    // SOLS
+    (
+        *inf1_svc_sols_core::sanctum_sols_core::keys::CONST_KEYS_OWNED.program_id(),
+        "sols",
+    ),
+    (inf1_svc_sols_core::ID, "sols_calculator"),
     // pricing programs
     (inf1_pp_flatfee_core::ID, "flat_fee_pricing_program"),
     (inf1_pp_flatslab_core::ID, "flat_slab_pricing_program"),
