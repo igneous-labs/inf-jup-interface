@@ -16,6 +16,7 @@ pub struct ConstKeys<T> {
     pub lido_calc_prog: T,
     pub marinade_calc_prog: T,
     pub sanctum_spl_multi_calc_prog: T,
+    pub sols_calc_prog: T,
     pub wsol_calc_prog: T,
     pub lido_prog: T,
     pub lido_progdata: T,
@@ -23,10 +24,13 @@ pub struct ConstKeys<T> {
     pub marinade_progdata: T,
     pub sanctum_spl_multi_prog: T,
     pub sanctum_spl_multi_progdata: T,
+    pub sols_prog: T,
+    pub sols_progdata: T,
     // stake pools
     pub jupsol_pool: T,
     // mints
     pub jupsol_mint: T,
+    pub swsol_mint: T,
     // there are other fixture keys that are not programmatically used
     // or imported from other sources
 }
@@ -50,6 +54,7 @@ pub const CONST_KEYS_STR: ConstKeys<&'static str> = ConstKeys::memset("")
     .const_with_lido_calc_prog("1idUSy4MGGKyKhvjSnGZ6Zc7Q4eKQcibym4BkEEw9KR")
     .const_with_marinade_calc_prog("mare3SCyfZkAndpBRBeonETmkCCB3TJTTrz8ZN2dnhP")
     .const_with_sanctum_spl_multi_calc_prog("ssmbu3KZxgonUtjEMCKspZzxvUQCxAFnyh1rcHUeEDo")
+    .const_with_sols_calc_prog("sssQe6fXL4KRDGeGvoFULZakZjwQ1DKd7vu29QDJBxP")
     .const_with_wsol_calc_prog("wsoGmxQLSvwWpuaidCApxN5kEowLe2HLQLJhCQnj4bE")
     .const_with_lido_prog("CrX7kMhLC3cSsXJdT7JDgqrRVWGnUpX3gfEfxxU2NVLi")
     .const_with_lido_progdata("CHZNLhDXKrsXBmmv947RFciquwBsn2NdABmhpxoX3wgZ")
@@ -57,8 +62,11 @@ pub const CONST_KEYS_STR: ConstKeys<&'static str> = ConstKeys::memset("")
     .const_with_marinade_progdata("4PQH9YmfuKrVyZaibkLYpJZPv2FPaybhq2GAuBcWMSBf")
     .const_with_sanctum_spl_multi_prog("SPMBzsVUuoHA4Jm6KunbsotaahvVikZs1JyTW6iJvbn")
     .const_with_sanctum_spl_multi_progdata("HxBTMuB7cFBPVWVJjTi9iBF8MPd7mfY1QnrrWfLAySFd")
+    .const_with_sols_prog("so1f7APRw5pJ5iNJrM9g5X9tQgXzk8kMUnXxDNdt99b")
+    .const_with_sols_progdata("4MhhkFGvNX24QpAkRPWn2f3CDPjQEmbd1V9QxHiS3Dsy")
     .const_with_jupsol_pool("8VpRhuxa7sUUepdY3kQiTmX9rS5vx4WgaXiAnXq4KCtr")
-    .const_with_jupsol_mint("jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v");
+    .const_with_jupsol_mint("jupSoLaHXQiZZTSfEWMTRRgpnyFm8f6sZdosWBjx93v")
+    .const_with_swsol_mint("swso1x7A8Dy36znxtcstSVLNseeCQzNV3wVAfa5GGLu");
 
 pub const CONST_PUBKEYS: ConstKeys<Pubkey> = {
     let mut res = ConstKeys::memset(Pubkey::new_from_array([0; 32]));

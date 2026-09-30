@@ -87,3 +87,19 @@ fn reserve_v2_swap_exact_in_wsol_to_inf_fixture_basic() {
             .map(|name| KeyedUiAccount::from_test_fixtures_json(name).into_keyed_account()),
     );
 }
+
+#[test]
+fn swap_exact_in_wsol_to_swsol_fixture_basic() {
+    swap_test(
+        INF_LST_LIST_ID,
+        QuoteParams {
+            output_mint: *CONST_PUBKEYS.swsol_mint(),
+            amount: 1_000_000_000,
+            ..QUOTE_PARAMS
+        },
+        &ALL_FIXTURES,
+        fixtures_accs_base()
+            .with_out_token_acc("swsol-token-acc")
+            .map(|n| KeyedUiAccount::from_test_fixtures_json(n).into_keyed_account()),
+    );
+}
